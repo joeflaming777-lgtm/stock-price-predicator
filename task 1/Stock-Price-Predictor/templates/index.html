@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Stock Price Predictor</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <!-- Apply saved theme instantly to prevent flash of wrong theme -->
+    <script>(function(){
+        var t = localStorage.getItem('theme');
+        if (t === 'dark' || (!t && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+            document.documentElement.setAttribute('data-theme', 'dark');
+        }
+    }());</script>
+</head>
+<body>
+    <nav class="navbar navbar-expand-lg sticky-top app-nav">
+        <div class="container-fluid px-3 px-lg-4">
+            <a class="navbar-brand" href="{{ url_for('index') }}">Stock Price Predictor</a>
+            <div class="d-flex align-items-center gap-2 ms-auto">
+                <button id="theme-toggle" aria-label="Toggle dark mode" title="Toggle dark / light mode">
+                    <span class="icon-moon">🌙</span>
+                    <span class="icon-sun">☀️</span>
+                </button>
+                <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#mainNav" aria-controls="mainNav" aria-expanded="false" aria-label="Toggle navigation">
+                    <span class="navbar-toggler-icon"></span>
+                </button>
+            </div>
+            <div class="collapse navbar-collapse" id="mainNav">
+                <ul class="navbar-nav ms-auto">
+                    <li class="nav-item"><a class="nav-link active" href="{{ url_for('index') }}">Dashboard</a></li>
+                </ul>
+            </div>
+        </div>
+    </nav>
+
+    <main class="container-fluid dashboard-shell px-3 px-lg-4">
+        <section class="search-band">
+            <div>
+                <p class="eyebrow mb-1">Machine Learning Forecast</p>
+                <h1>Stock Market Dashboard</h1>
+            </div>
+            <form class="ticker-search" method="POST" action="{{ url_for('index') }}">
+                <label for="symbol" class="visually-hidden">Ticker symbol</label>
+                <input id="symbol" name="symbol" class="form-control form-control-lg" type="text" value="{{ symbol }}" placeholder="AAPL, TSLA, INFY.NS" autocomplete="off" required>
+                <button class="btn btn-primary btn-lg" type="submit">Analyze</button>
+            </form>
+        </section>
+
+        {% if error %}
+        <div class="alert alert-danger app-alert" role="alert">
+            {{ error }}
+        </div>
+        {% endif %}
+
+        {% if result %}
+        <section class="summary-grid">
+            <article class="metric-card company-card">
+                <span class="metric-label">Company</span>
+                <h2>{{ result.company.name }}</h2>
+                <div class="company-meta">
+                    <span>{{ result.company.symbol }}</span>
+                    <span>{{ result.company.exchange }}</span>
+                    <span>{{ result.company.currency }}</span>
+                </div>
+            </article>
+            <article class="metric-card">
+                <span class="metric-label">Current Close</span>
+                <strong>{{ result.current_price|currency }}</strong>
+                <span class="{% if result.price_change >= 0 %}text-positive{% else %}text-negative{% endif %}">
+                    {{ result.price_change|signed_currency }} ({{ result.price_change_percent|signed_percent }})
+                </span>
+            </article>
+            <article class="metric-card">
+                <span class="metric-label">Next-Day Prediction</span>
+                <strong>{{ result.next_day_price|currency }}</strong>
+            </article>
+            <article class="metric-card trend-card trend-{{ result.trend.class }}">
+                <span class="metric-label">Trend Analysis</span>
+                <strong>{{ result.trend.label }}</strong>
+                <span>{{ result.trend.change_percent|signed_percent }} over 30 trading days</span>
+            </article>
+        </section>
+
+        <section class="info-grid">
+            <article class="info-panel info-panel-wide">
+                <h2>Company Information</h2>
+                <dl class="company-list">
+                    <div><dt>Sector</dt><dd>{{ result.company.sector }}</dd></div>
+                    <div><dt>Industry</dt><dd>{{ result.company.industry }}</dd></div>
+                    <div><dt>Market Cap</dt><dd>{{ result.company.market_cap }}</dd></div>
+                    <div><dt>Historical Window</dt><dd>{{ result.date_start }} to {{ result.date_end }}</dd></div>
+                    <div><dt>Rows Analyzed</dt><dd>{{ result.row_count }}</dd></div>
+                </dl>
+            </article>
+        </section>
+
+        <section class="prediction-grid">
+            <article class="prediction-panel">
+                <h2>7-Day Future Price Trend</h2>
+                <div class="prediction-strip">
+                    {% for item in result.predictions_7d %}
+                    <div class="prediction-tile">
+                        <span>{{ item.date }}</span>
+                        <strong>{{ item.price|currency }}</strong>
+                    </div>
+                    {% endfor %}
+                </div>
+            </article>
+            <article class="prediction-panel">
+                <h2>30-Day Forecast</h2>
+                <div id="futureChart" class="chart-box"></div>
+            </article>
+        </section>
+
+        <section class="chart-grid">
+            <article class="chart-panel chart-panel-wide">
+                <h2>Historical Data Analysis</h2>
+                <div id="historicalChart" class="chart-box chart-box-large"></div>
+            </article>
+            <article class="chart-panel">
+                <h2>Actual vs Predicted Price</h2>
+                <div id="actualPredictedChart" class="chart-box"></div>
+            </article>
+            <article class="chart-panel">
+                <h2>Moving Average Chart</h2>
+                <div id="movingAverageChart" class="chart-box"></div>
+            </article>
+        </section>
+
+        <section class="data-section">
+            <div class="section-heading">
+                <h2>Recent Historical Prices</h2>
+                <span>Fetched {{ result.fetched_at }}</span>
+            </div>
+            <div class="table-responsive">
+                <table class="table table-hover align-middle app-table price-table">
+                    <thead>
+                        <tr>
+                            <th>Date</th>
+                            <th>Open Price</th>
+                            <th>High Price</th>
+                            <th>Low Price</th>
+                            <th>Close Price</th>
+                            <th>Volume</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for row in result.latest_rows %}
+                        <tr>
+                            <td>{{ row.Date }}</td>
+                            <td>{{ row.Open|currency }}</td>
+                            <td>{{ row.High|currency }}</td>
+                            <td>{{ row.Low|currency }}</td>
+                            <td>{{ row.Close|currency }}</td>
+                            <td>{{ row.Volume }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        {% if result.news %}
+        <section class="news-section">
+            <div class="section-heading">
+                <h2>📰 Latest Market News</h2>
+                <span>Live headlines for {{ result.symbol }}</span>
+            </div>
+            <div class="news-grid">
+                {% for article in result.news %}
+                <a class="news-card" href="{{ article.url }}" target="_blank" rel="noopener noreferrer">
+                    {% if article.thumbnail %}
+                    <div class="news-thumb">
+                        <img src="{{ article.thumbnail }}" alt="" loading="lazy">
+                    </div>
+                    {% endif %}
+                    <div class="news-body">
+                        <div class="news-meta">
+                            <span class="news-publisher">{{ article.publisher }}</span>
+                            <span class="news-time">{{ article.published }}</span>
+                        </div>
+                        <h3 class="news-title">{{ article.title }}</h3>
+                        {% if article.summary %}
+                        <p class="news-summary">{{ article.summary }}</p>
+                        {% endif %}
+                    </div>
+                </a>
+                {% endfor %}
+            </div>
+        </section>
+        {% endif %}
+
+        <script type="application/json" id="historical-chart-json">{{ result.charts.historical|safe }}</script>
+        <script type="application/json" id="actual-predicted-chart-json">{{ result.charts.actual_predicted|safe }}</script>
+        <script type="application/json" id="moving-average-chart-json">{{ result.charts.moving_average|safe }}</script>
+        <script type="application/json" id="future-chart-json">{{ result.charts.future|safe }}</script>
+        {% endif %}
+
+    </main>
+
+    <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+    {% if result %}
+    <script>
+        // Stock context for TradeMind AI chatbot
+        window.TRADE_CONTEXT = {
+            symbol:    {{ result.symbol | tojson }},
+            company:   {{ result.company.name | tojson }},
+            price:     {{ result.current_price }},
+            change:    {{ result.price_change_percent }},
+            trend:     {{ result.trend.label | tojson }} + " (" + {{ result.trend.change_percent }} + "% over 30 days)",
+            nextDay:   {{ result.next_day_price }},
+            sector:    {{ result.company.sector | tojson }},
+            marketCap: {{ result.company.market_cap | tojson }},
+            news:      {{ result.news[:3] | map(attribute='title') | list | tojson }},
+        };
+    </script>
+    {% endif %}
+    <script src="{{ url_for('static', filename='js/dashboard.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/chatbot.js') }}"></script>
+</body>
+</html>
