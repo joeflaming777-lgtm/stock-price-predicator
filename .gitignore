@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# Virtual environments
+venv/
+env/
+.env
+.venv/
+
+# Data / generated files
+stock_data.csv
+*.csv
+
+# IDE / OS
+.vscode/
+.idea/
+*.DS_Store
+Thumbs.db
+
+# Flask
+instance/
+*.sqlite3
+
+# Secrets
+.env
+*.key
