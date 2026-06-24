@@ -197,22 +197,33 @@
 
         setTimeout(showTyping, 200);
 
+        // Abort controller — cancel the request if it takes > 30 seconds
+        const controller = new AbortController();
+        const timeoutId  = setTimeout(() => controller.abort(), 30000);
+
         try {
-            const body = { message: text, stock_context: stockCtx, history: history.slice(-10) };
+            const body = { message: text, stock_context: stockCtx, history: history.slice(-6) };
             const res  = await fetch(API_URL, {
                 method:  'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body:    JSON.stringify(body),
+                signal:  controller.signal,
             });
+            clearTimeout(timeoutId);
             const data = await res.json();
             hideTyping();
             const reply = data.reply || 'Sorry, I had trouble responding. Please try again.';
             appendMessage('bot', reply);
             history.push({ role: 'bot', content: reply });
             if (history.length > MAX_HIST) history.splice(0, 2);
-        } catch {
+        } catch (err) {
+            clearTimeout(timeoutId);
             hideTyping();
-            appendMessage('bot', '⚠️ Connection error. Please check your internet and try again.');
+            if (err.name === 'AbortError') {
+                appendMessage('bot', '⏱️ The request timed out. Please try again.');
+            } else {
+                appendMessage('bot', '⚠️ Could not reach the server. Make sure the Flask app is running and try again.');
+            }
         } finally {
             isTyping = false;
             document.getElementById('tm-send').disabled = false;

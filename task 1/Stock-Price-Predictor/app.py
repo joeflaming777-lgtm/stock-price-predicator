@@ -8,27 +8,37 @@ from flask import Flask, render_template, request, jsonify
 
 from predictor import StockPredictionError, analyze_stock
 
+# Load .env file if present
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass  # python-dotenv not installed; rely on system env vars
+
 
 app = Flask(__name__)
 app.config["SECRET_KEY"] = "stock-price-predictor-dev-key"
 
-# ─── Gemini AI setup ────────────────────────────────────────────────────────
-GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
-_gemini_client = None
+# ─── Groq AI setup ──────────────────────────────────────────────────────────
+GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "")
+_groq_client = None
 
 try:
-    from google import genai
-    from google.genai import types as genai_types
-    _GEMINI_AVAILABLE = True
+    from groq import Groq
+    _GROQ_AVAILABLE = True
+    print("[TradeMind] groq imported OK. API key", "SET [OK]" if GROQ_API_KEY else "NOT SET [MISSING] - add GROQ_API_KEY to .env file")
 except ImportError:
-    _GEMINI_AVAILABLE = False
+    _GROQ_AVAILABLE = False
+    print("[TradeMind] groq NOT installed - run: pip install groq")
 
-def _get_gemini_client():
-    global _gemini_client
-    if _gemini_client is None and _GEMINI_AVAILABLE and GEMINI_API_KEY:
-        from google import genai
-        _gemini_client = genai.Client(api_key=GEMINI_API_KEY)
-    return _gemini_client
+def _get_groq_client():
+    global _groq_client
+    # Always re-read the key in case .env was loaded after module init
+    key = os.environ.get("GROQ_API_KEY", "") or GROQ_API_KEY
+    if key and key != "your_groq_api_key_here" and _GROQ_AVAILABLE:
+        if _groq_client is None:
+            _groq_client = Groq(api_key=key)
+    return _groq_client
 
 
 TRADING_SYSTEM_PROMPT = """You are TradeMind AI, an expert stock market trading assistant built into a live Stock Price Predictor dashboard powered by machine learning.
@@ -493,43 +503,38 @@ def _fallback_reply(message: str) -> str:
     return random.choice(_GENERIC_FALLBACK)
 
 
-def _gemini_reply(user_message: str, stock_context: str, history: list) -> str:
-    client = _get_gemini_client()
+def _groq_reply(user_message: str, stock_context: str, history: list) -> str:
+    client = _get_groq_client()
     if client is None:
+        print("[TradeMind] No Groq client - using rule-based fallback. Set GROQ_API_KEY in .env")
         return _fallback_reply(user_message)
     try:
-        from google.genai import types as genai_types
+        # Build message list for Groq (OpenAI-compatible format)
+        messages = [{"role": "system", "content": TRADING_SYSTEM_PROMPT}]
 
-        # Build conversation history for multi-turn chat
-        contents = []
-        for turn in history[-8:]:
-            role = "user" if turn.get("role") == "user" else "model"
-            contents.append(genai_types.Content(
-                role=role,
-                parts=[genai_types.Part(text=turn.get("content", ""))],
-            ))
+        # Add conversation history (last 6 turns)
+        for turn in history[-6:]:
+            role = turn.get("role", "user")
+            if role == "bot":
+                role = "assistant"
+            messages.append({"role": role, "content": turn.get("content", "")})
 
+        # Build the current user message (inject stock context if available)
         full_message = user_message
         if stock_context:
             full_message = f"[CURRENT STOCK DATA]\n{stock_context}\n\n[USER QUESTION]\n{user_message}"
 
-        # Append the new user message
-        contents.append(genai_types.Content(
-            role="user",
-            parts=[genai_types.Part(text=full_message)],
-        ))
+        messages.append({"role": "user", "content": full_message})
 
-        response = client.models.generate_content(
-            model="gemini-2.0-flash",
-            contents=contents,
-            config=genai_types.GenerateContentConfig(
-                system_instruction=TRADING_SYSTEM_PROMPT,
-                temperature=0.7,
-                max_output_tokens=1024,
-            ),
+        response = client.chat.completions.create(
+            model="llama-3.3-70b-versatile",
+            messages=messages,
+            temperature=0.65,
+            max_tokens=800,
         )
-        return response.text
-    except Exception:
+        return response.choices[0].message.content
+    except Exception as exc:
+        print(f"[TradeMind] Groq API error: {exc}")
         return _fallback_reply(user_message)
 
 
@@ -598,8 +603,8 @@ def chat():
     if len(user_message) > 600:
         user_message = user_message[:600]
 
-    reply = _gemini_reply(user_message, stock_context, history)
-    return jsonify({"reply": reply, "ai_powered": _get_gemini_client() is not None})
+    reply = _groq_reply(user_message, stock_context, history)
+    return jsonify({"reply": reply, "ai_powered": _get_groq_client() is not None})
 
 
 if __name__ == "__main__":
