@@ -30,10 +30,19 @@
             <div class="collapse navbar-collapse" id="mainNav">
                 <ul class="navbar-nav ms-auto">
                     <li class="nav-item"><a class="nav-link active" href="{{ url_for('index') }}">Dashboard</a></li>
+                    <li class="nav-item"><a class="nav-link" href="{{ url_for('screener') }}">Screener</a></li>
+                    <li class="nav-item"><a class="nav-link" href="{{ url_for('about') }}">About</a></li>
                 </ul>
             </div>
         </div>
     </nav>
+
+    <!-- Market Indices Bar -->
+    <div class="indices-bar" id="indices-bar">
+        <div class="indices-inner" id="indices-inner">
+            <span class="idx-loading">Loading market data…</span>
+        </div>
+    </div>
 
     <main class="container-fluid dashboard-shell px-3 px-lg-4">
         <section class="search-band">
@@ -41,11 +50,26 @@
                 <p class="eyebrow mb-1">Machine Learning Forecast</p>
                 <h1>Stock Market Dashboard</h1>
             </div>
-            <form class="ticker-search" method="POST" action="{{ url_for('index') }}">
+            <form class="ticker-search" method="POST" action="{{ url_for('index') }}" autocomplete="off">
                 <label for="symbol" class="visually-hidden">Ticker symbol</label>
-                <input id="symbol" name="symbol" class="form-control form-control-lg" type="text" value="{{ symbol }}" placeholder="AAPL, TSLA, INFY.NS" autocomplete="off" required>
+                <div class="ac-wrap">
+                    <input id="symbol" name="symbol" class="form-control form-control-lg" type="text" value="{{ symbol }}" placeholder="Search company or ticker…" autocomplete="off" required>
+                    <div id="ac-list" class="ac-list" role="listbox" aria-label="Autocomplete suggestions"></div>
+                </div>
                 <button class="btn btn-primary btn-lg" type="submit">Analyze</button>
             </form>
+            <!-- Popular chips -->
+            <div class="popular-chips" id="popular-chips">
+                <span class="pop-label">Popular:</span>
+                <button class="pop-chip" data-sym="RELIANCE.NS">Reliance</button>
+                <button class="pop-chip" data-sym="TCS.NS">TCS</button>
+                <button class="pop-chip" data-sym="INFY.NS">Infosys</button>
+                <button class="pop-chip" data-sym="HDFCBANK.NS">HDFC Bank</button>
+                <button class="pop-chip" data-sym="AAPL">Apple</button>
+                <button class="pop-chip" data-sym="TSLA">Tesla</button>
+                <button class="pop-chip" data-sym="MSFT">Microsoft</button>
+                <a class="pop-chip pop-chip-link" href="{{ url_for('screener') }}">Browse all →</a>
+            </div>
         </section>
 
         {% if error %}
@@ -210,7 +234,7 @@
             company:   {{ result.company.name | tojson }},
             price:     {{ result.current_price }},
             change:    {{ result.price_change_percent }},
-            trend:     {{ result.trend.label | tojson }} + " (" + {{ result.trend.change_percent }} + "% over 30 days)",
+            trend:     {{ (result.trend.label ~ " (" ~ result.trend.change_percent ~ "% over 30 days)") | tojson }},
             nextDay:   {{ result.next_day_price }},
             sector:    {{ result.company.sector | tojson }},
             marketCap: {{ result.company.market_cap | tojson }},
@@ -220,5 +244,79 @@
     {% endif %}
     <script src="{{ url_for('static', filename='js/dashboard.js') }}"></script>
     <script src="{{ url_for('static', filename='js/chatbot.js') }}"></script>
+    <script>
+    /* ── Autocomplete ── */
+    (function(){
+        const inp = document.getElementById('symbol');
+        const lst = document.getElementById('ac-list');
+        if (!inp || !lst) return;
+        let timer;
+        inp.addEventListener('input', function(){
+            clearTimeout(timer);
+            const q = inp.value.trim();
+            if (q.length < 1) { lst.innerHTML=''; lst.classList.remove('ac-open'); return; }
+            timer = setTimeout(async () => {
+                try {
+                    const r = await fetch(`/api/search?q=${encodeURIComponent(q)}`);
+                    const d = await r.json();
+                    if (!d.results || !d.results.length) { lst.innerHTML=''; lst.classList.remove('ac-open'); return; }
+                    lst.innerHTML = d.results.map((s,i) =>
+                        `<div class="ac-item" role="option" tabindex="0" data-sym="${s.symbol}" data-idx="${i}">`+
+                        `<span class="ac-sym">${s.symbol.replace('.NS','').replace('.BO','')}</span>`+
+                        `<span class="ac-name">${s.name}</span>`+
+                        `<span class="ac-sector">${s.sector||''}</span>`+
+                        `</div>`
+                    ).join('');
+                    lst.classList.add('ac-open');
+                    lst.querySelectorAll('.ac-item').forEach(item => {
+                        item.addEventListener('mousedown', () => { inp.value = item.dataset.sym; lst.innerHTML=''; lst.classList.remove('ac-open'); inp.form.submit(); });
+                        item.addEventListener('keydown', e => { if(e.key==='Enter'||e.key===' '){ inp.value=item.dataset.sym; inp.form.submit(); } });
+                    });
+                } catch(e) { lst.innerHTML=''; lst.classList.remove('ac-open'); }
+            }, 250);
+        });
+        document.addEventListener('click', e => { if(!lst.contains(e.target)&&e.target!==inp){ lst.innerHTML=''; lst.classList.remove('ac-open'); } });
+        inp.addEventListener('keydown', e => {
+            const items = lst.querySelectorAll('.ac-item');
+            if (!items.length) return;
+            const active = lst.querySelector('.ac-item.ac-active');
+            let idx = active ? parseInt(active.dataset.idx) : -1;
+            if (e.key === 'ArrowDown') { e.preventDefault(); idx = Math.min(idx+1, items.length-1); }
+            else if (e.key === 'ArrowUp') { e.preventDefault(); idx = Math.max(idx-1, 0); }
+            else if (e.key === 'Escape') { lst.innerHTML=''; lst.classList.remove('ac-open'); return; }
+            else return;
+            items.forEach(it => it.classList.remove('ac-active'));
+            if (items[idx]) { items[idx].classList.add('ac-active'); inp.value = items[idx].dataset.sym; }
+        });
+    })();
+
+    /* ── Popular chips ── */
+    document.querySelectorAll('.pop-chip[data-sym]').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const sym = btn.dataset.sym;
+            const inp = document.getElementById('symbol');
+            if (inp) { inp.value = sym; inp.form.submit(); }
+        });
+    });
+
+    /* ── Market Indices Bar ── */
+    (async function(){
+        const inner = document.getElementById('indices-inner');
+        if (!inner) return;
+        try {
+            const res  = await fetch('/api/market-indices');
+            const data = await res.json();
+            if (!data.indices || !data.indices.length) return;
+            inner.innerHTML = data.indices.map(idx => {
+                const pct = idx.change_pct;
+                const cls = pct == null ? '' : pct >= 0 ? 'idx-up' : 'idx-down';
+                const arrow = pct == null ? '' : pct >= 0 ? '▲' : '▼';
+                const priceStr = idx.price != null ? Number(idx.price).toLocaleString('en-IN',{maximumFractionDigits:2}) : '—';
+                const pctStr = pct != null ? `${arrow} ${Math.abs(pct).toFixed(2)}%` : '';
+                return `<span class="idx-item"><span class="idx-name">${idx.name}</span><span class="idx-val">${priceStr}</span><span class="idx-chg ${cls}">${pctStr}</span></span>`;
+            }).join('');
+        } catch(e) { if(inner) inner.innerHTML=''; }
+    })();
+    </script>
 </body>
 </html>

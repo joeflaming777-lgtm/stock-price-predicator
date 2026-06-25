@@ -350,15 +350,23 @@
         // If TRADE_CONTEXT is set by the page, update bar
         updateContextBar();
 
-        // Watch for context updates (stock analysis changes)
-        const origContext = window.TRADE_CONTEXT;
-        Object.defineProperty(window, 'TRADE_CONTEXT', {
-            set(val) {
-                origContext !== val && (window._tm_ctx = val);
-                updateContextBar();
-            },
-            get() { return window._tm_ctx || origContext; },
-            configurable: true,
-        });
+        // Mirror the existing TRADE_CONTEXT value into _tm_ctx so the
+        // getter always reads the live value, even if it was set before
+        // this script ran (server-side rendered inline script).
+        if (window.TRADE_CONTEXT !== undefined) {
+            window._tm_ctx = window.TRADE_CONTEXT;
+        }
+        try {
+            Object.defineProperty(window, 'TRADE_CONTEXT', {
+                set(val) {
+                    window._tm_ctx = val;
+                    updateContextBar();
+                },
+                get() { return window._tm_ctx; },
+                configurable: true,
+            });
+        } catch (e) {
+            // Property already non-configurable — context bar may not auto-update
+        }
     });
 })();

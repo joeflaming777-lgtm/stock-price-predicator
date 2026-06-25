@@ -2,11 +2,17 @@
 
 from __future__ import annotations
 
+import json
 import os
 import random
+from pathlib import Path
+
+import yfinance as yf
 from flask import Flask, render_template, request, jsonify
 
 from predictor import StockPredictionError, analyze_stock
+
+_STOCKS_JSON = Path(__file__).resolve().parent / "static" / "data" / "stocks.json"
 
 # Load .env file if present
 try:
@@ -605,6 +611,153 @@ def chat():
 
     reply = _groq_reply(user_message, stock_context, history)
     return jsonify({"reply": reply, "ai_powered": _get_groq_client() is not None})
+
+
+@app.route("/about")
+def about():
+    return render_template("about.html")
+
+
+# ─── Screener routes ─────────────────────────────────────────────────────────
+@app.route("/screener")
+def screener():
+    return render_template("screener.html")
+
+
+@app.route("/api/screener-data")
+def screener_data():
+    """Batch-fetch last-close prices for Nifty50 or US30."""
+    list_name = request.args.get("list", "nifty50")
+    try:
+        with open(_STOCKS_JSON, encoding="utf-8") as fh:
+            stocks_db = json.load(fh)
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+    tickers_info = stocks_db.get(list_name, [])
+    if not tickers_info:
+        return jsonify({"stocks": [], "list": list_name})
+
+    symbols = [s["symbol"] for s in tickers_info]
+
+    try:
+        raw = yf.download(
+            symbols,
+            period="5d",
+            interval="1d",
+            auto_adjust=False,
+            progress=False,
+        )
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+    results = []
+    for stock in tickers_info:
+        sym = stock["symbol"]
+        try:
+            # Multi-ticker download → raw["Close"] is a DataFrame
+            # Single-ticker download → raw["Close"] is a Series
+            if len(symbols) == 1:
+                close_series = raw["Close"].dropna()
+                high_series  = raw["High"].dropna()
+                low_series   = raw["Low"].dropna()
+            else:
+                close_series = raw["Close"][sym].dropna()
+                high_series  = raw["High"][sym].dropna()
+                low_series   = raw["Low"][sym].dropna()
+
+            if len(close_series) == 0:
+                raise ValueError("no data")
+
+            curr  = float(close_series.iloc[-1])
+            prev  = float(close_series.iloc[-2]) if len(close_series) >= 2 else curr
+            chg   = ((curr - prev) / prev * 100) if prev else 0
+            hi52  = round(float(high_series.max()), 2) if len(high_series) else None
+            lo52  = round(float(low_series.min()),  2) if len(low_series)  else None
+
+            results.append({
+                "symbol":     sym,
+                "name":       stock["name"],
+                "sector":     stock.get("sector", ""),
+                "exchange":   stock.get("exchange", ""),
+                "price":      round(curr, 2),
+                "change_pct": round(chg,  2),
+                "week_high":  hi52,
+                "week_low":   lo52,
+            })
+        except Exception:
+            results.append({
+                "symbol":     sym,
+                "name":       stock["name"],
+                "sector":     stock.get("sector", ""),
+                "exchange":   stock.get("exchange", ""),
+                "price":      None,
+                "change_pct": None,
+                "week_high":  None,
+                "week_low":   None,
+            })
+
+    return jsonify({"stocks": results, "list": list_name})
+
+
+@app.route("/api/market-indices")
+def market_indices():
+    """Return live quotes for the 4 major indices."""
+    indices = [
+        {"symbol": "^NSEI",  "name": "NIFTY 50"},
+        {"symbol": "^BSESN", "name": "SENSEX"},
+        {"symbol": "^GSPC",  "name": "S&P 500"},
+        {"symbol": "^IXIC",  "name": "NASDAQ"},
+    ]
+    results = []
+    for idx in indices:
+        try:
+            raw  = yf.download(idx["symbol"], period="5d", interval="1d",
+                               auto_adjust=False, progress=False)
+            vals = raw["Close"].dropna()
+            curr = float(vals.iloc[-1])
+            prev = float(vals.iloc[-2]) if len(vals) >= 2 else curr
+            chg  = ((curr - prev) / prev * 100) if prev else 0
+            results.append({
+                "name":       idx["name"],
+                "symbol":     idx["symbol"],
+                "price":      round(curr, 2),
+                "change_pct": round(chg, 2),
+            })
+        except Exception:
+            results.append({
+                "name":       idx["name"],
+                "symbol":     idx["symbol"],
+                "price":      None,
+                "change_pct": None,
+            })
+    return jsonify({"indices": results})
+
+
+@app.route("/api/search")
+def search_stocks():
+    """Autocomplete: return up to 10 matching stocks from stocks.json."""
+    q = (request.args.get("q") or "").strip().lower()
+    if not q:
+        return jsonify({"results": []})
+
+    try:
+        with open(_STOCKS_JSON, encoding="utf-8") as fh:
+            stocks_db = json.load(fh)
+        all_stocks: list[dict] = []
+        seen: set[str] = set()
+        for lst in stocks_db.values():
+            for s in lst:
+                if s["symbol"] not in seen:
+                    seen.add(s["symbol"])
+                    all_stocks.append(s)
+        matches = [
+            s for s in all_stocks
+            if q in s["symbol"].lower() or q in s["name"].lower()
+        ][:10]
+        return jsonify({"results": matches})
+    except Exception:
+        return jsonify({"results": []})
 
 
 if __name__ == "__main__":
