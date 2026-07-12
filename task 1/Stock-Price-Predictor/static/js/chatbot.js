@@ -236,13 +236,15 @@
         if (!window.TRADE_CONTEXT) return '';
         const c = window.TRADE_CONTEXT;
         if (!c.symbol) return '';
+        const symbolMap = { "USD": "$", "INR": "₹", "EUR": "€", "GBP": "£" };
+        const curSym = symbolMap[c.currency] || c.currency || "$";
         return [
             `Stock Symbol: ${c.symbol}`,
             c.company   ? `Company: ${c.company}`           : null,
-            c.price     ? `Current Price: $${c.price}`      : null,
+            c.price     ? `Current Price: ${curSym}${c.price}`      : null,
             c.change    ? `Price Change: ${c.change}%`      : null,
             c.trend     ? `ML Trend Signal: ${c.trend}`     : null,
-            c.nextDay   ? `ML Next-Day Prediction: $${c.nextDay}` : null,
+            c.nextDay   ? `ML Next-Day Prediction: ${curSym}${c.nextDay}` : null,
             c.sector    ? `Sector: ${c.sector}`             : null,
             c.marketCap ? `Market Cap: ${c.marketCap}`      : null,
             c.news      ? `Recent Headlines: ${c.news}`     : null,

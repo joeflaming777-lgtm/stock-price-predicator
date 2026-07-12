@@ -91,14 +91,14 @@
             </article>
             <article class="metric-card">
                 <span class="metric-label">Current Close</span>
-                <strong>{{ result.current_price|currency }}</strong>
+                <strong>{{ result.current_price|currency(result.company.currency) }}</strong>
                 <span class="{% if result.price_change >= 0 %}text-positive{% else %}text-negative{% endif %}">
-                    {{ result.price_change|signed_currency }} ({{ result.price_change_percent|signed_percent }})
+                    {{ result.price_change|signed_currency(result.company.currency) }} ({{ result.price_change_percent|signed_percent }})
                 </span>
             </article>
             <article class="metric-card">
                 <span class="metric-label">Next-Day Prediction</span>
-                <strong>{{ result.next_day_price|currency }}</strong>
+                <strong>{{ result.next_day_price|currency(result.company.currency) }}</strong>
             </article>
             <article class="metric-card trend-card trend-{{ result.trend.class }}">
                 <span class="metric-label">Trend Analysis</span>
@@ -127,7 +127,7 @@
                     {% for item in result.predictions_7d %}
                     <div class="prediction-tile">
                         <span>{{ item.date }}</span>
-                        <strong>{{ item.price|currency }}</strong>
+                        <strong>{{ item.price|currency(result.company.currency) }}</strong>
                     </div>
                     {% endfor %}
                 </div>
@@ -174,10 +174,10 @@
                         {% for row in result.latest_rows %}
                         <tr>
                             <td>{{ row.Date }}</td>
-                            <td>{{ row.Open|currency }}</td>
-                            <td>{{ row.High|currency }}</td>
-                            <td>{{ row.Low|currency }}</td>
-                            <td>{{ row.Close|currency }}</td>
+                            <td>{{ row.Open|currency(result.company.currency) }}</td>
+                            <td>{{ row.High|currency(result.company.currency) }}</td>
+                            <td>{{ row.Low|currency(result.company.currency) }}</td>
+                            <td>{{ row.Close|currency(result.company.currency) }}</td>
                             <td>{{ row.Volume }}</td>
                         </tr>
                         {% endfor %}
@@ -238,6 +238,7 @@
             nextDay:   {{ result.next_day_price }},
             sector:    {{ result.company.sector | tojson }},
             marketCap: {{ result.company.market_cap | tojson }},
+            currency:  {{ result.company.currency | tojson }},
             news:      {{ result.news[:3] | map(attribute='title') | list | tojson }},
         };
     </script>

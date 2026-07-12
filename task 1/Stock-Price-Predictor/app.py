@@ -509,6 +509,133 @@ def _fallback_reply(message: str) -> str:
     return random.choice(_GENERIC_FALLBACK)
 
 
+def _detect_stock_symbol(message: str, stock_context: str = "") -> str | None:
+    import re
+    msg = message.lower()
+    
+    # 1. Load stocks.json to check symbols/names
+    name_map = {}
+    try:
+        with open(_STOCKS_JSON, encoding="utf-8") as fh:
+            stocks_db = json.load(fh)
+        
+        for lst in stocks_db.values():
+            for s in lst:
+                sym = s["symbol"]
+                name = s["name"].lower()
+                # exact symbol
+                name_map[sym.lower()] = sym
+                # symbol without suffix
+                sym_no_suffix = sym.split(".")[0].lower()
+                name_map[sym_no_suffix] = sym
+                # full name
+                name_map[name] = sym
+                # partial name (e.g. "reliance" in "reliance industries")
+                first_word = name.split(" ")[0]
+                if len(first_word) > 3:
+                    name_map[first_word] = sym
+    except Exception as e:
+        print(f"Error loading stocks.json for bot lookup: {e}")
+        
+    # Check for exact matches in the message words
+    words = re.findall(r'[a-zA-Z0-9\.-]+', msg)
+    for word in words:
+        if word in name_map:
+            return name_map[word]
+            
+    # Check full names / substrings in the original message
+    for name, sym in name_map.items():
+        if len(name) > 3 and name in msg:
+            return sym
+            
+    # Check for ticker-like pattern ending in .NS or .BO
+    suffix_match = re.search(r'\b([a-zA-Z0-9_-]+)\.(ns|bo)\b', msg)
+    if suffix_match:
+        return suffix_match.group(0).upper()
+        
+    # Check if there is a symbol in the frontend stock_context
+    if stock_context:
+        ctx_match = re.search(r'Stock Symbol:\s*([a-zA-Z0-9\.-]+)', stock_context)
+        if ctx_match:
+            return ctx_match.group(1).upper()
+            
+    return None
+
+
+def _get_stock_context_for_bot(symbol: str) -> str:
+    import pandas as pd
+    try:
+        ticker = yf.Ticker(symbol)
+        # Fetch 1 year of daily data
+        hist = ticker.history(period="1y", interval="1d")
+        if hist.empty:
+            return ""
+            
+        try:
+            info = ticker.info or {}
+        except Exception:
+            info = {}
+            
+        company_name = info.get("longName") or info.get("shortName") or symbol
+        sector = info.get("sector") or "Not available"
+        industry = info.get("industry") or "Not available"
+        currency = info.get("currency") or "USD"
+        exchange = info.get("exchange") or "Not available"
+        
+        close = hist["Close"]
+        curr_price = float(close.iloc[-1])
+        prev_price = float(close.iloc[-2]) if len(close) > 1 else curr_price
+        pct_change = ((curr_price - prev_price) / prev_price) * 100
+        
+        # Calculate moving averages
+        ma50_series = close.rolling(window=50).mean()
+        ma200_series = close.rolling(window=200).mean()
+        ma50 = float(ma50_series.iloc[-1]) if len(ma50_series) > 0 else None
+        ma200 = float(ma200_series.iloc[-1]) if len(ma200_series) > 0 else None
+        
+        # Calculate RSI (14 days)
+        delta = close.diff()
+        gain = delta.clip(lower=0)
+        loss = -delta.clip(upper=0)
+        avg_gain = gain.rolling(window=14).mean()
+        avg_loss = loss.rolling(window=14).mean()
+        # Avoid division by zero
+        rs = avg_gain / avg_loss.replace(0, 0.00001)
+        rsi_series = 100 - (100 / (1 + rs))
+        curr_rsi = float(rsi_series.iloc[-1]) if len(rsi_series) > 0 else None
+        
+        # Calculate MACD
+        ema12 = close.ewm(span=12, adjust=False).mean()
+        ema26 = close.ewm(span=26, adjust=False).mean()
+        macd = ema12 - ema26
+        signal = macd.ewm(span=9, adjust=False).mean()
+        curr_macd = float(macd.iloc[-1]) if len(macd) > 0 else None
+        curr_signal = float(signal.iloc[-1]) if len(signal) > 0 else None
+        
+        # 52-week High/Low
+        hi_52 = float(hist["High"].max())
+        lo_52 = float(hist["Low"].min())
+        
+        ctx = [
+            f"[LIVE STOCK DATA FROM YAHOO FINANCE]",
+            f"Stock Symbol: {symbol}",
+            f"Company Name: {company_name}",
+            f"Sector: {sector} | Industry: {industry}",
+            f"Exchange: {exchange} | Currency: {currency}",
+            f"Latest Close Price: {currency} {curr_price:.2f}",
+            f"Daily Price Change: {pct_change:+.2f}%",
+            f"50-Day SMA (MA_50): {ma50:.2f}" if ma50 is not None and not pd.isna(ma50) else "50-Day SMA: N/A",
+            f"200-Day SMA (MA_200): {ma200:.2f}" if ma200 is not None and not pd.isna(ma200) else "200-Day SMA: N/A",
+            f"RSI (14-period): {curr_rsi:.2f}" if curr_rsi is not None and not pd.isna(curr_rsi) else "RSI: N/A",
+            f"MACD Line: {curr_macd:.2f} | Signal Line: {curr_signal:.2f}" if curr_macd is not None and not pd.isna(curr_macd) else "MACD: N/A",
+            f"52-Week High: {currency} {hi_52:.2f} | 52-Week Low: {currency} {lo_52:.2f}"
+        ]
+        return "\n".join(ctx)
+    except Exception as e:
+        print(f"Error fetching Yahoo Finance data for {symbol}: {e}")
+        return ""
+
+
 def _groq_reply(user_message: str, stock_context: str, history: list) -> str:
     client = _get_groq_client()
     if client is None:
@@ -546,21 +673,39 @@ def _groq_reply(user_message: str, stock_context: str, history: list) -> str:
 
 # ─── Jinja2 filters ─────────────────────────────────────────────────────────
 @app.template_filter("currency")
-def currency_filter(value: float) -> str:
+def currency_filter(value: float, currency_code: str = "USD") -> str:
     try:
-        return f"${float(value):,.2f}"
+        currency_map = {
+            "USD": "$",
+            "INR": "₹",
+            "EUR": "€",
+            "GBP": "£",
+        }
+        symbol = currency_map.get(currency_code, currency_code)
+        if len(symbol) > 1:
+            return f"{symbol} {float(value):,.2f}"
+        return f"{symbol}{float(value):,.2f}"
     except (TypeError, ValueError):
         return "$0.00"
 
 
 @app.template_filter("signed_currency")
-def signed_currency_filter(value: float) -> str:
+def signed_currency_filter(value: float, currency_code: str = "USD") -> str:
     try:
         amount = float(value)
     except (TypeError, ValueError):
         amount = 0.0
     sign = "+" if amount >= 0 else "-"
-    return f"{sign}${abs(amount):,.2f}"
+    currency_map = {
+        "USD": "$",
+        "INR": "₹",
+        "EUR": "€",
+        "GBP": "£",
+    }
+    symbol = currency_map.get(currency_code, currency_code)
+    if len(symbol) > 1:
+        return f"{sign}{symbol} {abs(amount):,.2f}"
+    return f"{sign}{symbol}{abs(amount):,.2f}"
 
 
 @app.template_filter("signed_percent")
@@ -595,6 +740,32 @@ def index():
     return render_template("index.html", result=result, symbol=symbol, error=error)
 
 
+def _should_include_stock_context(message: str) -> bool:
+    msg = message.lower().strip()
+    
+    # Common greetings and generic chat starters
+    greetings = {
+        "hi", "hello", "hey", "hola", "yo", "good morning", "good afternoon", 
+        "good evening", "start", "help", "what can you do", "who are you", 
+        "how are you", "greetings"
+    }
+    
+    # Remove punctuation for matching greeting words
+    import re
+    clean_msg = re.sub(r'[^\w\s]', '', msg).strip()
+    if clean_msg in greetings:
+        return False
+        
+    # Keywords indicating interest in the currently active stock
+    active_stock_keywords = [
+        "buy", "sell", "trend", "predict", "forecast", "this stock", "current stock",
+        "analysis", "should i", "target", "stop-loss", "stop loss", "indicator", 
+        "chart", "price", "rsi", "macd", "moving average", "sma", "ema", "death cross", "golden cross"
+    ]
+    
+    return any(kw in msg for kw in active_stock_keywords)
+
+
 @app.route("/api/chat", methods=["POST"])
 def chat():
     """AI trading chatbot endpoint."""
@@ -608,6 +779,25 @@ def chat():
 
     if len(user_message) > 600:
         user_message = user_message[:600]
+
+    # 1. Check if user explicitly mentioned a stock in their message
+    detected_symbol = _detect_stock_symbol(user_message, "")
+    
+    # 2. If not explicitly mentioned, check if context should still be included
+    # (e.g. they asked "Should I buy?" which references the active stock)
+    if not detected_symbol and _should_include_stock_context(user_message):
+        detected_symbol = _detect_stock_symbol("", stock_context)
+
+    # 3. Fetch live data for context if a symbol was resolved
+    if detected_symbol:
+        live_context = _get_stock_context_for_bot(detected_symbol)
+        if live_context:
+            stock_context = live_context
+        else:
+            stock_context = ""
+    else:
+        # User is asking a general/greeting query, clear context so bot doesn't get distracted
+        stock_context = ""
 
     reply = _groq_reply(user_message, stock_context, history)
     return jsonify({"reply": reply, "ai_powered": _get_groq_client() is not None})
