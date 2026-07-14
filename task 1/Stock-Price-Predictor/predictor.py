@@ -481,10 +481,27 @@ def analyze_stock(symbol: str) -> dict[str, Any]:
     symbol = _clean_symbol(symbol)
     data, ticker = fetch_stock_data(symbol)
     model_output = train_and_compare_models(data)
-    current_price = _safe_float(data["Close"].iloc[-1])
-    previous_price = _safe_float(data["Close"].iloc[-2], current_price)
+
+    # Fetch ticker.info for real-time price details
+    try:
+        info_dict = ticker.info or {}
+    except Exception:
+        info_dict = {}
+
+    live_price = info_dict.get("currentPrice") or info_dict.get("regularMarketPrice")
+    if live_price is not None:
+        current_price = _safe_float(live_price)
+    else:
+        current_price = _safe_float(data["Close"].iloc[-1])
+
+    live_prev_close = info_dict.get("regularMarketPreviousClose")
+    if live_prev_close is not None:
+        previous_price = _safe_float(live_prev_close)
+    else:
+        previous_price = _safe_float(data["Close"].iloc[-2], current_price)
+
     price_change = current_price - previous_price
-    price_change_percent = (price_change / previous_price) * 100 if previous_price else 0
+    price_change_percent = (price_change / previous_price) * 100 if previous_price else 0.0
 
     predictions_30d = predict_future_prices(model_output["best_model"], data, days=30)
     predictions_7d = predictions_30d[:7]

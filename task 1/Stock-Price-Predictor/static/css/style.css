@@ -1567,3 +1567,82 @@ h2 {
     .scr-select { min-width: 130px; }
     .ticker-search { grid-template-columns: 1fr auto; }
 }
+
+/* ═══════════════════════════════════════════════════════
+   REFRESH BUTTONS & ANIMATIONS
+   ═══════════════════════════════════════════════════════ */
+
+/* Refresh button styling */
+.btn-refresh-mini {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    padding: 0;
+    margin: 0;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    background: var(--surface);
+    color: var(--muted);
+    cursor: pointer;
+    font-size: 0.85rem;
+    transition: transform 0.2s ease, background 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+}
+
+.btn-refresh-mini:hover {
+    background: color-mix(in srgb, var(--blue) 8%, var(--surface));
+    border-color: var(--blue);
+    color: var(--blue);
+    transform: scale(1.08);
+}
+
+.btn-refresh-mini:active {
+    transform: scale(0.95);
+}
+
+.btn-refresh-mini .refresh-icon {
+    display: inline-block;
+    transition: transform 0.25s ease;
+}
+
+/* Spin animation for refresh icons when loading */
+.btn-refresh-mini.loading .refresh-icon {
+    animation: refresh-spin 0.85s linear infinite;
+}
+
+@keyframes refresh-spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+/* Glow animations for updated cards */
+@keyframes price-glow-up {
+    0% { box-shadow: 0 0 0 0px rgba(63, 185, 80, 0.4); }
+    50% { box-shadow: 0 0 16px 6px rgba(63, 185, 80, 0.5); }
+    100% { box-shadow: var(--shadow); }
+}
+
+@keyframes price-glow-down {
+    0% { box-shadow: 0 0 0 0px rgba(248, 81, 73, 0.4); }
+    50% { box-shadow: 0 0 16px 6px rgba(248, 81, 73, 0.5); }
+    100% { box-shadow: var(--shadow); }
+}
+
+.glow-up {
+    animation: price-glow-up 1.2s cubic-bezier(0.25, 0.8, 0.25, 1) forwards;
+}
+
+.glow-down {
+    animation: price-glow-down 1.2s cubic-bezier(0.25, 0.8, 0.25, 1) forwards;
+}
+
+/* Fade-in for newly loaded news */
+.news-fade-in {
+    animation: news-card-fade 0.5s ease-out forwards;
+}
+
+@keyframes news-card-fade {
+    from { opacity: 0; transform: translateY(8px); }
+    to { opacity: 1; transform: translateY(0); }
+}

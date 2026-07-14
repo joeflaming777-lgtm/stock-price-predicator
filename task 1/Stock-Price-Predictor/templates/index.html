@@ -89,10 +89,15 @@
                     <span>{{ result.company.currency }}</span>
                 </div>
             </article>
-            <article class="metric-card">
-                <span class="metric-label">Current Close</span>
-                <strong>{{ result.current_price|currency(result.company.currency) }}</strong>
-                <span class="{% if result.price_change >= 0 %}text-positive{% else %}text-negative{% endif %}">
+            <article class="metric-card" id="price-card-el">
+                <div class="d-flex justify-content-between align-items-center">
+                    <span class="metric-label">Current Price</span>
+                    <button id="refresh-stock-btn" class="btn-refresh-mini" title="Refresh Price & News" aria-label="Refresh price and news">
+                        <span class="refresh-icon">🔄</span>
+                    </button>
+                </div>
+                <strong id="price-val">{{ result.current_price|currency(result.company.currency) }}</strong>
+                <span id="price-change-val" class="{% if result.price_change >= 0 %}text-positive{% else %}text-negative{% endif %}">
                     {{ result.price_change|signed_currency(result.company.currency) }} ({{ result.price_change_percent|signed_percent }})
                 </span>
             </article>
@@ -186,13 +191,18 @@
             </div>
         </section>
 
-        {% if result.news %}
+        {% if result %}
         <section class="news-section">
             <div class="section-heading">
-                <h2>📰 Latest Market News</h2>
-                <span>Live headlines for {{ result.symbol }}</span>
+                <div class="d-flex align-items-center gap-2">
+                    <h2>📰 Latest Market News</h2>
+                    <button id="refresh-news-btn" class="btn-refresh-mini" title="Refresh Price & News" aria-label="Refresh price and news">
+                        <span class="refresh-icon">🔄</span>
+                    </button>
+                </div>
+                <span>Live headlines for {{ result.symbol }} | Updated <span id="news-updated-time">{{ result.fetched_at }}</span></span>
             </div>
-            <div class="news-grid">
+            <div class="news-grid" id="news-grid-container">
                 {% for article in result.news %}
                 <a class="news-card" href="{{ article.url }}" target="_blank" rel="noopener noreferrer">
                     {% if article.thumbnail %}
@@ -211,6 +221,8 @@
                         {% endif %}
                     </div>
                 </a>
+                {% else %}
+                <div class="text-center py-4 w-100 text-muted">No news articles found for {{ result.symbol }}.</div>
                 {% endfor %}
             </div>
         </section>

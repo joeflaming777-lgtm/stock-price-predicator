@@ -583,9 +583,19 @@ def _get_stock_context_for_bot(symbol: str) -> str:
         exchange = info.get("exchange") or "Not available"
         
         close = hist["Close"]
-        curr_price = float(close.iloc[-1])
-        prev_price = float(close.iloc[-2]) if len(close) > 1 else curr_price
-        pct_change = ((curr_price - prev_price) / prev_price) * 100
+        live_price = info.get("currentPrice") or info.get("regularMarketPrice")
+        if live_price is not None:
+            curr_price = float(live_price)
+        else:
+            curr_price = float(close.iloc[-1])
+
+        live_prev = info.get("regularMarketPreviousClose")
+        if live_prev is not None:
+            prev_price = float(live_prev)
+        else:
+            prev_price = float(close.iloc[-2]) if len(close) > 1 else curr_price
+
+        pct_change = ((curr_price - prev_price) / prev_price) * 100 if prev_price else 0.0
         
         # Calculate moving averages
         ma50_series = close.rolling(window=50).mean()
@@ -801,6 +811,65 @@ def chat():
 
     reply = _groq_reply(user_message, stock_context, history)
     return jsonify({"reply": reply, "ai_powered": _get_groq_client() is not None})
+
+
+@app.route("/api/stock-update")
+def stock_update():
+    """Retrieve only the live price and latest news for a ticker without retraining models."""
+    symbol = request.args.get("symbol", "").strip().upper()
+    if not symbol:
+        return jsonify({"error": "Symbol parameter is required"}), 400
+
+    try:
+        from datetime import datetime
+        import yfinance as yf
+        from predictor import fetch_stock_news, _safe_float
+
+        ticker = yf.Ticker(symbol)
+        
+        # 1. Fetch 5 days of history to fall back on if needed (fast)
+        hist = ticker.history(period="5d", interval="1d", auto_adjust=False)
+        if hist.empty:
+            return jsonify({"error": f"No data found for symbol {symbol}"}), 404
+
+        # 2. Get live info
+        try:
+            info = ticker.info or {}
+        except Exception:
+            info = {}
+
+        currency = info.get("currency") or "USD"
+
+        # Calculate current price and changes
+        live_price = info.get("currentPrice") or info.get("regularMarketPrice")
+        if live_price is not None:
+            current_price = _safe_float(live_price)
+        else:
+            current_price = _safe_float(hist["Close"].iloc[-1])
+
+        live_prev = info.get("regularMarketPreviousClose")
+        if live_prev is not None:
+            prev_price = float(live_prev)
+        else:
+            prev_price = float(hist["Close"].iloc[-2]) if len(hist) > 1 else current_price
+
+        price_change = current_price - prev_price
+        price_change_percent = (price_change / prev_price) * 100 if prev_price else 0.0
+
+        # Fetch news
+        news = fetch_stock_news(ticker)
+
+        return jsonify({
+            "symbol": symbol,
+            "currency": currency,
+            "current_price": round(current_price, 2),
+            "price_change": round(price_change, 2),
+            "price_change_percent": round(price_change_percent, 2),
+            "fetched_at": datetime.now().strftime("%Y-%m-%d %H:%M"),
+            "news": news
+        })
+    except Exception as exc:
+        return jsonify({"error": f"Error updating stock: {str(exc)}"}), 500
 
 
 @app.route("/about")
