@@ -211,7 +211,7 @@
                 <a class="news-card" href="{{ article.url }}" target="_blank" rel="noopener noreferrer">
                     {% if article.thumbnail %}
                     <div class="news-thumb">
-                        <img src="{{ article.thumbnail }}" alt="" loading="lazy">
+                        <img src="{{ article.thumbnail }}" alt="{{ article.title }}" loading="lazy">
                     </div>
                     {% endif %}
                     <div class="news-body">
