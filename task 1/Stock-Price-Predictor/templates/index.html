@@ -243,20 +243,31 @@
     <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
     {% if result %}
+    <script id="trade-context-json" type="application/json">
+    {
+        "symbol": {{ result.symbol | tojson }},
+        "company": {{ result.company.name | tojson }},
+        "price": {{ result.current_price }},
+        "change": {{ result.price_change_percent }},
+        "trend": {{ (result.trend.label ~ " (" ~ result.trend.change_percent ~ "% over 30 days)") | tojson }},
+        "nextDay": {{ result.next_day_price }},
+        "sector": {{ result.company.sector | tojson }},
+        "marketCap": {{ result.company.market_cap | tojson }},
+        "currency": {{ result.company.currency | tojson }},
+        "news": {{ result.news[:3] | map(attribute='title') | list | tojson }}
+    }
+    </script>
     <script>
-        // Stock context for TradeMind AI chatbot
-        window.TRADE_CONTEXT = {
-            symbol:    {{ result.symbol | tojson }},
-            company:   {{ result.company.name | tojson }},
-            price:     {{ result.current_price }},
-            change:    {{ result.price_change_percent }},
-            trend:     {{ (result.trend.label ~ " (" ~ result.trend.change_percent ~ "% over 30 days)") | tojson }},
-            nextDay:   {{ result.next_day_price }},
-            sector:    {{ result.company.sector | tojson }},
-            marketCap: {{ result.company.market_cap | tojson }},
-            currency:  {{ result.company.currency | tojson }},
-            news:      {{ result.news[:3] | map(attribute='title') | list | tojson }},
-        };
+        (function() {
+            const el = document.getElementById("trade-context-json");
+            if (el) {
+                try {
+                    window.TRADE_CONTEXT = JSON.parse(el.textContent);
+                } catch (err) {
+                    console.error("Trade context JSON parse error:", err);
+                }
+            }
+        })();
     </script>
     {% endif %}
     <script src="{{ url_for('static', filename='js/dashboard.js') }}"></script>
