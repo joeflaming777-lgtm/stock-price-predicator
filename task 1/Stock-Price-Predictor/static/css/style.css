@@ -487,6 +487,100 @@ h2 {
     }
 }
 
+/* ───── Live Update Badge & Refresh Button ───── */
+.live-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 3px 8px;
+    font-size: 0.72rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: #10b981;
+    background: rgba(16, 185, 129, 0.12);
+    border: 1px solid rgba(16, 185, 129, 0.3);
+    border-radius: 12px;
+    user-select: none;
+}
+
+.live-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background-color: #10b981;
+    box-shadow: 0 0 0 rgba(16, 185, 129, 0.4);
+    animation: livePulse 1.8s infinite;
+}
+
+@keyframes livePulse {
+    0% {
+        box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7);
+    }
+    70% {
+        box-shadow: 0 0 0 6px rgba(16, 185, 129, 0);
+    }
+    100% {
+        box-shadow: 0 0 0 0 rgba(16, 185, 129, 0);
+    }
+}
+
+.btn-refresh-mini {
+    background: transparent;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 4px 8px;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.2s ease, border-color 0.2s ease, transform 0.2s ease;
+}
+
+.btn-refresh-mini:hover {
+    background: rgba(15, 23, 42, 0.05);
+    border-color: #cbd5e1;
+    transform: scale(1.05);
+}
+
+.btn-refresh-mini.loading .refresh-icon {
+    display: inline-block;
+    animation: spinRefresh 0.8s linear infinite;
+}
+
+@keyframes spinRefresh {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+}
+
+/* Card Price Update Glow Animations */
+.glow-up {
+    animation: priceGlowUp 1.2s ease-out;
+}
+
+.glow-down {
+    animation: priceGlowDown 1.2s ease-out;
+}
+
+@keyframes priceGlowUp {
+    0% { box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.6); background-color: rgba(16, 185, 129, 0.08); }
+    100% { box-shadow: var(--shadow); background-color: var(--surface); }
+}
+
+@keyframes priceGlowDown {
+    0% { box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.6); background-color: rgba(239, 68, 68, 0.08); }
+    100% { box-shadow: var(--shadow); background-color: var(--surface); }
+}
+
+.news-fade-in {
+    animation: newsFadeIn 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes newsFadeIn {
+    from { opacity: 0; transform: translateY(8px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
 /* ───── News section ───── */
 .news-section {
     background: var(--surface);

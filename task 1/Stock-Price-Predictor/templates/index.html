@@ -91,7 +91,10 @@
             </article>
             <article class="metric-card" id="price-card-el">
                 <div class="d-flex justify-content-between align-items-center">
-                    <span class="metric-label">Current Price</span>
+                    <div class="d-flex align-items-center gap-2">
+                        <span class="metric-label">Current Price</span>
+                        <span class="live-badge" title="Auto-refreshes live every 30 seconds"><span class="live-dot"></span>Live</span>
+                    </div>
                     <button id="refresh-stock-btn" class="btn-refresh-mini" title="Refresh Price & News" aria-label="Refresh price and news">
                         <span class="refresh-icon">🔄</span>
                     </button>
@@ -196,6 +199,7 @@
             <div class="section-heading">
                 <div class="d-flex align-items-center gap-2">
                     <h2>📰 Latest Market News</h2>
+                    <span class="live-badge" title="Auto-refreshes live every 30 seconds"><span class="live-dot"></span>Live</span>
                     <button id="refresh-news-btn" class="btn-refresh-mini" title="Refresh Price & News" aria-label="Refresh price and news">
                         <span class="refresh-icon">🔄</span>
                     </button>

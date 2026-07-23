@@ -81,6 +81,11 @@ document.addEventListener("DOMContentLoaded", function () {
     if (btnNews) {
         btnNews.addEventListener("click", refreshStockPriceAndNews);
     }
+
+    // Set up automatic live update polling every 30 seconds
+    if (window.TRADE_CONTEXT && window.TRADE_CONTEXT.symbol) {
+        setInterval(refreshStockPriceAndNews, 30000);
+    }
 });
 
 /* ─── Price & News Live Refresh ──────────────────────────── */
