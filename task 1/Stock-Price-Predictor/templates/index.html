@@ -99,7 +99,7 @@
                         <span class="refresh-icon">🔄</span>
                     </button>
                 </div>
-                <strong id="price-val">{{ result.current_price|currency(result.company.currency) }}</strong>
+                <strong id="price-val" data-raw="{{ result.current_price }}">{{ result.current_price|currency(result.company.currency) }}</strong>
                 <span id="price-change-val" class="{% if result.price_change >= 0 %}text-positive{% else %}text-negative{% endif %}">
                     {{ result.price_change|signed_currency(result.company.currency) }} ({{ result.price_change_percent|signed_percent }})
                 </span>
@@ -204,7 +204,10 @@
                         <span class="refresh-icon">🔄</span>
                     </button>
                 </div>
-                <span>Live headlines for {{ result.symbol }} | Updated <span id="news-updated-time">{{ result.fetched_at }}</span></span>
+                <div class="d-flex align-items-center gap-2">
+                    <span>Live headlines for {{ result.symbol }} | Updated <span id="news-updated-time">{{ result.fetched_at }}</span></span>
+                    <span id="refresh-countdown"></span>
+                </div>
             </div>
             <div class="news-grid" id="news-grid-container">
                 {% for article in result.news %}
@@ -327,24 +330,6 @@
         });
     });
 
-    /* ── Market Indices Bar ── */
-    (async function(){
-        const inner = document.getElementById('indices-inner');
-        if (!inner) return;
-        try {
-            const res  = await fetch('/api/market-indices');
-            const data = await res.json();
-            if (!data.indices || !data.indices.length) return;
-            inner.innerHTML = data.indices.map(idx => {
-                const pct = idx.change_pct;
-                const cls = pct == null ? '' : pct >= 0 ? 'idx-up' : 'idx-down';
-                const arrow = pct == null ? '' : pct >= 0 ? '▲' : '▼';
-                const priceStr = idx.price != null ? Number(idx.price).toLocaleString('en-IN',{maximumFractionDigits:2}) : '—';
-                const pctStr = pct != null ? `${arrow} ${Math.abs(pct).toFixed(2)}%` : '';
-                return `<span class="idx-item"><span class="idx-name">${idx.name}</span><span class="idx-val">${priceStr}</span><span class="idx-chg ${cls}">${pctStr}</span></span>`;
-            }).join('');
-        } catch(e) { if(inner) inner.innerHTML=''; }
-    })();
     </script>
 </body>
 </html>

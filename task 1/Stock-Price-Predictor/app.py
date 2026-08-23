@@ -856,8 +856,8 @@ def stock_update():
         price_change = current_price - prev_price
         price_change_percent = (price_change / prev_price) * 100 if prev_price else 0.0
 
-        # Fetch news
-        news = fetch_stock_news(ticker)
+        # Fetch news (up to 12 items)
+        news = fetch_stock_news(ticker, max_items=12)
 
         return jsonify({
             "symbol": symbol,
@@ -865,7 +865,7 @@ def stock_update():
             "current_price": round(current_price, 2),
             "price_change": round(price_change, 2),
             "price_change_percent": round(price_change_percent, 2),
-            "fetched_at": datetime.now().strftime("%Y-%m-%d %H:%M"),
+            "fetched_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             "news": news
         })
     except Exception as exc:
@@ -961,26 +961,40 @@ def screener_data():
 
 @app.route("/api/market-indices")
 def market_indices():
-    """Return live quotes for the 4 major indices."""
+    """Return live quotes for the 5 major indices using fast_info for speed."""
     indices = [
         {"symbol": "^NSEI",  "name": "NIFTY 50"},
         {"symbol": "^BSESN", "name": "SENSEX"},
         {"symbol": "^GSPC",  "name": "S&P 500"},
         {"symbol": "^IXIC",  "name": "NASDAQ"},
+        {"symbol": "^DJI",   "name": "DOW JONES"},
     ]
     results = []
     for idx in indices:
         try:
-            raw  = yf.download(idx["symbol"], period="5d", interval="1d",
-                               auto_adjust=False, progress=False)
-            vals = raw["Close"].dropna()
-            curr = float(vals.iloc[-1])
-            prev = float(vals.iloc[-2]) if len(vals) >= 2 else curr
-            chg  = ((curr - prev) / prev * 100) if prev else 0
+            ticker = yf.Ticker(idx["symbol"])
+            # fast_info is a lightweight property (no heavy .info call)
+            fi = ticker.fast_info
+            curr = float(fi.last_price) if fi.last_price is not None else None
+            prev = float(fi.previous_close) if fi.previous_close is not None else None
+
+            # Fallback: 2-day history if fast_info not available
+            if curr is None or prev is None:
+                raw  = yf.download(idx["symbol"], period="2d", interval="1d",
+                                   auto_adjust=False, progress=False)
+                vals = raw["Close"].dropna()
+                if len(vals) >= 2:
+                    curr = float(vals.iloc[-1])
+                    prev = float(vals.iloc[-2])
+                elif len(vals) == 1:
+                    curr = float(vals.iloc[-1])
+                    prev = curr
+
+            chg = ((curr - prev) / prev * 100) if (curr and prev) else 0
             results.append({
                 "name":       idx["name"],
                 "symbol":     idx["symbol"],
-                "price":      round(curr, 2),
+                "price":      round(curr, 2) if curr is not None else None,
                 "change_pct": round(chg, 2),
             })
         except Exception:
@@ -991,6 +1005,26 @@ def market_indices():
                 "change_pct": None,
             })
     return jsonify({"indices": results})
+
+
+@app.route("/api/news")
+def get_news():
+    """Fetch latest news for a given ticker symbol."""
+    symbol = request.args.get("symbol", "").strip().upper()
+    if not symbol:
+        return jsonify({"error": "Symbol parameter is required"}), 400
+    try:
+        from predictor import fetch_stock_news
+        ticker = yf.Ticker(symbol)
+        news = fetch_stock_news(ticker, max_items=12)
+        from datetime import datetime
+        return jsonify({
+            "symbol": symbol,
+            "news": news,
+            "fetched_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        })
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
 
 
 @app.route("/api/search")

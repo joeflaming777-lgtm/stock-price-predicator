@@ -124,69 +124,92 @@ def get_company_info(ticker: yf.Ticker, symbol: str) -> dict[str, Any]:
 
 
 def fetch_rss_news(query: str, max_items: int = 10) -> list[dict[str, Any]]:
-    """Fetch news from Google News RSS feed as a fallback when ticker news is unavailable."""
+    """Fetch news from multiple RSS feeds as fallback when ticker news is unavailable."""
     import urllib.parse
     import urllib.request
     import xml.etree.ElementTree as ET
     from email.utils import parsedate_to_datetime
 
-    clean_q = urllib.parse.quote(f"{query} stock news")
-    rss_url = f"https://news.google.com/rss/search?q={clean_q}&hl=en-US&gl=US&ceid=US:en"
-
-    req = urllib.request.Request(
-        rss_url,
-        headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
-    )
     articles: list[dict[str, Any]] = []
+    seen_titles: set[str] = set()
     now_ts = datetime.now(tz=timezone.utc).timestamp()
 
-    try:
-        with urllib.request.urlopen(req, timeout=5) as response:
-            xml_data = response.read()
+    clean_q = urllib.parse.quote(f"{query} stock")
+    rss_sources = [
+        f"https://feeds.finance.yahoo.com/rss/2.0/headline?s={urllib.parse.quote(query)}&region=US&lang=en-US",
+        f"https://news.google.com/rss/search?q={urllib.parse.quote(query + ' stock market')}&hl=en-US&gl=US&ceid=US:en",
+        f"https://news.google.com/rss/search?q={clean_q}&hl=en-IN&gl=IN&ceid=IN:en",
+    ]
 
-        root = ET.fromstring(xml_data)
-        channel = root.find("channel")
-        if channel is None:
-            return articles
+    for rss_url in rss_sources:
+        if len(articles) >= max_items:
+            break
+        req = urllib.request.Request(
+            rss_url,
+            headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=5) as response:
+                xml_data = response.read()
 
-        for item in channel.findall("item")[:max_items]:
-            title = item.findtext("title", "Untitled")
-            url = item.findtext("link", "#")
-            pub_date = item.findtext("pubDate", "")
-            source_el = item.find("source")
-            publisher = source_el.text.strip() if (source_el is not None and source_el.text) else "Google News"
+            root = ET.fromstring(xml_data)
+            channel = root.find("channel")
+            if channel is None:
+                continue
 
-            # Clean up title if it ends with " - PublisherName"
-            if " - " in title and publisher != "Google News":
-                title_parts = title.rsplit(" - ", 1)
-                title = title_parts[0].strip()
+            for item in channel.findall("item"):
+                if len(articles) >= max_items:
+                    break
+                title = item.findtext("title", "Untitled")
+                url = item.findtext("link", "#")
+                pub_date = item.findtext("pubDate", "")
+                source_el = item.find("source")
+                publisher = source_el.text.strip() if (source_el is not None and source_el.text) else "News"
 
-            pub_display = "Recently"
-            if pub_date:
-                try:
-                    dt = parsedate_to_datetime(pub_date)
-                    diff = int(now_ts - dt.timestamp())
-                    if diff < 3600:
-                        pub_display = f"{max(1, diff // 60)}m ago"
-                    elif diff < 86400:
-                        pub_display = f"{diff // 3600}h ago"
-                    else:
-                        pub_display = f"{diff // 86400}d ago"
-                except Exception:
-                    pub_display = "Recently"
+                # Clean up title if it ends with " - PublisherName"
+                if " - " in title and publisher != "News":
+                    title_parts = title.rsplit(" - ", 1)
+                    title = title_parts[0].strip()
 
-            articles.append({
-                "title": title,
-                "publisher": publisher,
-                "url": url,
-                "thumbnail": "",
-                "summary": "",
-                "published": pub_display,
-            })
-    except Exception as exc:
-        print(f"[News] RSS fallback error for '{query}': {exc}")
+                if title in seen_titles or title == "Untitled":
+                    continue
+                seen_titles.add(title)
 
-    return articles
+                pub_display = "Recently"
+                if pub_date:
+                    try:
+                        dt = parsedate_to_datetime(pub_date)
+                        diff = int(now_ts - dt.timestamp())
+                        if diff < 3600:
+                            pub_display = f"{max(1, diff // 60)}m ago"
+                        elif diff < 86400:
+                            pub_display = f"{diff // 3600}h ago"
+                        elif diff < 7 * 86400:
+                            pub_display = f"{diff // 86400}d ago"
+                        else:
+                            pub_display = dt.strftime("%b %d")
+                    except Exception:
+                        pub_display = "Recently"
+
+                description = item.findtext("description", "") or ""
+                # Strip HTML tags from description
+                import re as _re
+                summary = _re.sub(r"<[^>]+>", "", description).strip()
+                if len(summary) > 200:
+                    summary = summary[:200].rstrip() + "…"
+
+                articles.append({
+                    "title": title,
+                    "publisher": publisher,
+                    "url": url,
+                    "thumbnail": "",
+                    "summary": summary,
+                    "published": pub_display,
+                })
+        except Exception as exc:
+            print(f"[News] RSS source error for '{query}' ({rss_url[:60]}…): {exc}")
+
+    return articles[:max_items]
 
 
 def fetch_stock_news(ticker: yf.Ticker, max_items: int = 10) -> list[dict[str, Any]]:
@@ -242,12 +265,14 @@ def fetch_stock_news(ticker: yf.Ticker, max_items: int = 10) -> list[dict[str, A
                 thumb_data = item.get("thumbnail", {}) or {}
             resolutions = thumb_data.get("resolutions", []) if isinstance(thumb_data, dict) else []
             if resolutions:
-                thumbnail = resolutions[0].get("url", "")
+                # Prefer the largest resolution
+                best = max(resolutions, key=lambda r: r.get("width", 0))
+                thumbnail = best.get("url", "")
 
             # Summary / description
             summary = content.get("summary") or content.get("description") or item.get("summary") or item.get("description") or ""
-            if summary and len(summary) > 200:
-                summary = summary[:200].rstrip() + "…"
+            if summary and len(summary) > 240:
+                summary = summary[:240].rstrip() + "…"
 
             # Published time → human-readable relative string
             pub_ts_raw = content.get("pubDate") or item.get("providerPublishTime")
@@ -265,8 +290,11 @@ def fetch_stock_news(ticker: yf.Ticker, max_items: int = 10) -> list[dict[str, A
                         pub_display = f"{max(1, diff // 60)}m ago"
                     elif diff < 86400:
                         pub_display = f"{diff // 3600}h ago"
-                    else:
+                    elif diff < 7 * 86400:
                         pub_display = f"{diff // 86400}d ago"
+                    else:
+                        from datetime import datetime as _dt
+                        pub_display = _dt.fromtimestamp(pub_ts).strftime("%b %d")
                 except Exception:
                     pub_display = "Recently"
 
@@ -283,8 +311,8 @@ def fetch_stock_news(ticker: yf.Ticker, max_items: int = 10) -> list[dict[str, A
         except Exception:
             continue
 
-    # Fallback to Google News RSS if yfinance returned fewer than 3 news items
-    if len(articles) < 3:
+    # Fallback to RSS if yfinance returned fewer than 5 news items
+    if len(articles) < 5:
         symbol = getattr(ticker, "ticker", "") or ""
         try:
             info = ticker.info or {}
