@@ -148,3 +148,9 @@ R² Score is computed on test predictions, and the best model is selected automa
 
 ## ⚠️ Disclaimer
 All information is strictly for educational purposes. This application does not constitute financial advice. Past stock market performance does not guarantee future results.
+
+---
+
+## 📜 License
+This project is licensed under the **MIT License** - see the [LICENSE](LICENSE) file for details.
+
