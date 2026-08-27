@@ -872,11 +872,6 @@ def stock_update():
         return jsonify({"error": f"Error updating stock: {str(exc)}"}), 500
 
 
-@app.route("/about")
-def about():
-    return render_template("about.html")
-
-
 # ─── Screener routes ─────────────────────────────────────────────────────────
 @app.route("/screener")
 def screener():
